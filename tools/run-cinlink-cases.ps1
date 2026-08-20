@@ -5,6 +5,10 @@
     [Parameter(ParameterSetName = 'All', Mandatory = $true)]
     [switch]$All,
 
+    [Parameter(ParameterSetName = 'Workflow', Mandatory = $true)]
+    [ValidateSet('subtitle', 'translation', 'enhance', 'text-watermark', 'image-watermark', 'mix', 'long-to-short')]
+    [string]$Workflow,
+
     [string]$CatalogPath,
     [string]$RunId,
     [switch]$NoRestart,
@@ -34,6 +38,12 @@ $enabledCases = @($catalog.cases | Where-Object { $_.enabled -ne $false })
 if ($All) {
     $selectedCases = $enabledCases
 }
+elseif (-not [string]::IsNullOrWhiteSpace($Workflow)) {
+    $selectedCases = @($enabledCases | Where-Object { $_.workflow -eq $Workflow })
+    if ($selectedCases.Count -eq 0) {
+        throw "主流程没有启用的用例：$Workflow"
+    }
+}
 else {
     $selectedCases = @($enabledCases | Where-Object { $_.id -eq $CaseId })
     if ($selectedCases.Count -ne 1) {
@@ -47,11 +57,13 @@ $plan = [ordered]@{
     suite = $catalog.suite
     runId = $RunId
     runDirectory = $runDirectory
-    manualGateBetweenCases = [bool]$All
+    manualGateBetweenCases = ($selectedCases.Count -gt 1)
     cases = @($selectedCases | ForEach-Object {
         [ordered]@{
             id = $_.id
             name = $_.name
+            workflow = $_.workflow
+            variant = $_.variant
             evidenceName = $_.evidenceName
             files = @($_.files)
             timeoutMinutes = $_.timeoutMinutes

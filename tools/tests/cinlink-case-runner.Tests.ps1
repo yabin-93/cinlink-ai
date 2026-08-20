@@ -15,8 +15,21 @@ if (-not (Test-Path -LiteralPath $runnerPath -PathType Leaf)) {
 $catalog = Get-Content -Raw -Encoding UTF8 -LiteralPath $casePath | ConvertFrom-Json
 $cases = @($catalog.cases)
 if ($catalog.schemaVersion -ne 1) { throw 'Unexpected case schema version.' }
-if ($cases.Count -ne 7) { throw 'The core catalog must contain seven workflow cases.' }
-if (@($cases.id | Select-Object -Unique).Count -ne 7) { throw 'Case IDs must be unique.' }
+if ($cases.Count -ne 28) { throw 'The core catalog must contain seven baselines and twenty-one added cases.' }
+if (@($cases.id | Select-Object -Unique).Count -ne 28) { throw 'Case IDs must be unique.' }
+
+$expectedWorkflows = @('subtitle', 'translation', 'enhance', 'text-watermark', 'image-watermark', 'mix', 'long-to-short')
+foreach ($workflow in $expectedWorkflows) {
+    $workflowCases = @($cases | Where-Object { $_.workflow -eq $workflow })
+    if ($workflowCases.Count -ne 4) {
+        throw "Workflow $workflow must contain one baseline and three added cases."
+    }
+    foreach ($variant in @('baseline', 'normal', 'boundary', 'constraint')) {
+        if (@($workflowCases | Where-Object { $_.variant -eq $variant }).Count -ne 1) {
+            throw "Workflow $workflow is missing variant $variant."
+        }
+    }
+}
 
 foreach ($case in $cases) {
     if ([string]::IsNullOrWhiteSpace($case.id)) { throw 'A case is missing its ID.' }
@@ -40,8 +53,20 @@ if (-not $single.runDirectory.StartsWith((Join-Path $workspace 'output\ui-test\a
 
 $allJson = & $runnerPath -All -DryRun
 $all = $allJson | ConvertFrom-Json
-if (@($all.cases).Count -ne 7) { throw 'All-case dry-run must select seven cases.' }
+if (@($all.cases).Count -ne 28) { throw 'All-case dry-run must select all twenty-eight cases.' }
 if (-not $all.manualGateBetweenCases) { throw 'All-case execution must require a manual serial gate.' }
+$expectedOrder = @(1..28 | ForEach-Object { 'CL-AI-{0:D3}' -f $_ })
+if ((@($all.cases.id) -join ',') -ne ($expectedOrder -join ',')) {
+    throw 'All-case execution must be ordered from CL-AI-001 through CL-AI-028.'
+}
+
+$workflowJson = & $runnerPath -Workflow 'subtitle' -DryRun
+$workflowPlan = $workflowJson | ConvertFrom-Json
+if (@($workflowPlan.cases).Count -ne 4) { throw 'Workflow dry-run must select four cases.' }
+if (@($workflowPlan.cases | Where-Object { $_.workflow -ne 'subtitle' }).Count -ne 0) {
+    throw 'Workflow dry-run selected a case from another workflow.'
+}
+if (-not $workflowPlan.manualGateBetweenCases) { throw 'Workflow execution must require a manual serial gate.' }
 
 $submitRaw = Get-Content -Raw -LiteralPath $submitPath
 if ($submitRaw -notmatch 'EvidenceDirectory') {

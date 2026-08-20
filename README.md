@@ -17,6 +17,12 @@
 & ".\tools\run-cinlink-cases.ps1" -All -DryRun
 ```
 
+按主流程查看该流程的 4 条用例：
+
+```powershell
+& ".\tools\run-cinlink-cases.ps1" -Workflow "subtitle" -DryRun
+```
+
 ## 重新运行一条用例
 
 先正常打开 CinLink，再执行：
@@ -40,6 +46,14 @@
 ```
 
 每条任务提交后，脚本会暂停。必须等待当前任务结束，完成进度、积分、结果和证据检查，再按 Enter 提交下一条，避免并发任务干扰。
+
+也可以只串行运行某个主流程的 4 条用例：
+
+```powershell
+& ".\tools\run-cinlink-cases.ps1" -Workflow "subtitle"
+```
+
+可用主流程：`subtitle`、`translation`、`enhance`、`text-watermark`、`image-watermark`、`mix`、`long-to-short`。
 
 ## 运行结果
 
