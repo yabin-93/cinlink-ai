@@ -1,17 +1,24 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)]
     [string]$Prompt,
     [Parameter(Mandatory = $true)]
     [string[]]$Files,
     [Parameter(Mandatory = $true)]
-    [string]$EvidenceName
+    [string]$EvidenceName,
+    [string]$EvidenceDirectory
 )
 
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
 $cdp = Join-Path $PSScriptRoot 'cdp-command.mjs'
 $capture = Join-Path $PSScriptRoot 'capture-window.ps1'
-$evidenceDir = Join-Path $workspace 'output\ui-test\ai-core-smoke-2026-08-20'
+if ([string]::IsNullOrWhiteSpace($EvidenceDirectory)) {
+    $EvidenceDirectory = Join-Path $workspace ('output\ui-test\manual-{0}' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+}
+if ($EvidenceName.IndexOfAny([System.IO.Path]::GetInvalidFileNameChars()) -ge 0) {
+    throw 'EvidenceName 包含文件名不允许的字符。'
+}
+$null = New-Item -ItemType Directory -Path $EvidenceDirectory -Force
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type @"
@@ -65,7 +72,7 @@ if ($LASTEXITCODE -ne 0) { throw 'CDP text input failed.' }
 Start-Sleep -Seconds 1
 
 $ready = Invoke-CdpEvaluate '({text:document.querySelector(".composer-prompt-editor")?.innerText,sendDisabled:document.querySelector(".composer-send")?.disabled,context:[...document.querySelectorAll("[data-context-file]")].map(e=>e.getAttribute("data-context-file"))})'
-& $capture -ProcessName CinLink -OutputPath (Join-Path $evidenceDir "$EvidenceName-before-submit.png") | Out-Null
+& $capture -ProcessName CinLink -OutputPath (Join-Path $EvidenceDirectory "$EvidenceName-before-submit.png") | Out-Null
 Invoke-CdpEvaluate 'document.querySelector(".composer-send")?.click(); true'
 Start-Sleep -Seconds 3
 Invoke-CdpEvaluate '({tail:document.body.innerText.slice(-2500),stop:!!document.querySelector(".composer-stop"),jobs:[...document.querySelectorAll(".message-job-id")].slice(-4).map(e=>e.innerText)})'

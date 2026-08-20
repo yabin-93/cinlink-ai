@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "suite": "cinlink-ai-core",
+  "description": "CinLink AI 核心工作流冒烟测试用例。用例数据只描述输入、提示词、人工动作和预期结果。",
+  "cases": [
+    {
+      "id": "CL-AI-001",
+      "name": "自动字幕并烧录",
+      "enabled": true,
+      "evidenceName": "subtitle",
+      "prompt": "为 @7MB.mp4 自动识别英文语音，生成简体中文字幕并烧录到视频中；同时输出 SRT 字幕文件，保持时间轴与说话内容同步。",
+      "files": [
+        "E:\\图片视频素材\\talecast测试素材\\不同的内容\\单音频轨道\\7MB.mp4"
+      ],
+      "timeoutMinutes": 20,
+      "manualActions": [],
+      "expected": [
+        "任务进入完成终态且进度不再变化",
+        "可以预览或下载烧录简体中文字幕的视频",
+        "可以下载非空且时间戳递增的 SRT 文件"
+      ]
+    },
+    {
+      "id": "CL-AI-002",
+      "name": "英文翻译为中文",
+      "enabled": true,
+      "evidenceName": "translation",
+      "prompt": "将 @7MB.mp4 中的英文语音翻译为简体中文，生成中文字幕并合成中文配音；保留原画面，输出翻译后视频和 SRT 字幕文件。",
+      "files": [
+        "E:\\图片视频素材\\talecast测试素材\\不同的内容\\单音频轨道\\7MB.mp4"
+      ],
+      "timeoutMinutes": 20,
+      "manualActions": [],
+      "expected": [
+        "结果区同时提供翻译后视频和 SRT",
+        "视频存在中文配音和简体中文字幕",
+        "字幕、配音和画面时间轴基本同步"
+      ]
+    },
+    {
+      "id": "CL-AI-003",
+      "name": "画质增强取消与重试",
+      "enabled": true,
+      "evidenceName": "enhance-cancel-retry",
+      "prompt": "将 @7MB.mp4 画质增强到 1920×1080，提升清晰度并去除轻微噪点；保持原始时长、画幅比例、内容和音频同步。",
+      "files": [
+        "E:\\图片视频素材\\talecast测试素材\\不同的内容\\单音频轨道\\7MB.mp4"
+      ],
+      "timeoutMinutes": 20,
+      "manualActions": [
+        "首次提交进入执行中后，在进度明显变化时使用应用内停止操作",
+        "记录取消确认、状态收敛、积分处理和原生重试入口",
+        "使用原生重试；如无入口，记录缺口后用完全相同提示词重新提交"
+      ],
+      "expected": [
+        "取消前有确认，取消后客户端和服务端进入取消终态",
+        "重试只产生一个有效结果且没有重复扣费",
+        "最终视频约为 1920×1080，时长偏差不超过 1 秒并保留音轨"
+      ]
+    },
+    {
+      "id": "CL-AI-004",
+      "name": "文字水印",
+      "enabled": true,
+      "evidenceName": "text-watermark",
+      "prompt": "为 @7MB.mp4 添加文字水印“CinLink Smoke Test”，放在右上角，使用白色半透明样式，不遮挡主体；保持原始时长和音频。",
+      "files": [
+        "E:\\图片视频素材\\talecast测试素材\\不同的内容\\单音频轨道\\7MB.mp4"
+      ],
+      "timeoutMinutes": 20,
+      "manualActions": [],
+      "expected": [
+        "右上角全程稳定显示 CinLink Smoke Test",
+        "水印为白色半透明且不遮挡主体",
+        "视频时长和音轨保持不变"
+      ]
+    },
+    {
+      "id": "CL-AI-005",
+      "name": "图片水印",
+      "enabled": true,
+      "evidenceName": "image-watermark",
+      "prompt": "为 @7MB.mp4 添加 @cinlink-smoke-watermark.png 图片水印，放在右下角，宽度约为画面宽度的 15%，透明度约 70%，距离边缘约 24 像素；保持原始时长和音频。",
+      "files": [
+        "E:\\图片视频素材\\talecast测试素材\\不同的内容\\单音频轨道\\7MB.mp4",
+        "C:\\Users\\chen\\Documents\\ChatGPT\\test\\output\\ui-test\\ai-core-smoke-2026-08-20\\cinlink-smoke-watermark.png"
+      ],
+      "timeoutMinutes": 20,
+      "manualActions": [],
+      "expected": [
+        "右下角全程稳定显示透明 PNG 水印",
+        "宽度、透明度和边距符合提示词且不遮挡主体",
+        "视频时长和音轨保持不变"
+      ]
+    },
+    {
+      "id": "CL-AI-006",
+      "name": "两视频混剪",
+      "enabled": true,
+      "evidenceName": "mix",
+      "prompt": "将 @7MB.mp4 和 @1270510918-1-12.mp4 混剪成 45 秒横屏视频；从两个视频中各选取代表性片段，使用自然转场，保留主要对白并统一音量，输出 1280×720 MP4。",
+      "files": [
+        "E:\\图片视频素材\\talecast测试素材\\不同的内容\\单音频轨道\\7MB.mp4",
+        "E:\\图片视频素材\\talecast测试素材\\不同的内容\\单音频轨道\\1270510918-1-12.mp4"
+      ],
+      "timeoutMinutes": 30,
+      "manualActions": [],
+      "expected": [
+        "输出约 45 秒的 1280×720 MP4",
+        "包含两个源视频的可识别代表性片段",
+        "转场可播放且音量没有明显突变"
+      ]
+    },
+    {
+      "id": "CL-AI-007",
+      "name": "长视频变短",
+      "enabled": true,
+      "evidenceName": "long-to-short",
+      "prompt": "将 @1270510918-1-12.mp4 提炼为 30 秒横屏短视频；优先保留信息完整、人物发言清晰的高光片段，删除停顿和重复内容，保持原声并添加简体中文字幕，输出 1280×720 MP4。",
+      "files": [
+        "E:\\图片视频素材\\talecast测试素材\\不同的内容\\单音频轨道\\1270510918-1-12.mp4"
+      ],
+      "timeoutMinutes": 30,
+      "manualActions": [
+        "如应用生成高光方案，检查片段总时长和内容后确认方案"
+      ],
+      "expected": [
+        "输出约 30 秒且明显短于源视频的 1280×720 MP4",
+        "内容连贯并保留原声和简体中文字幕",
+        "任务进入完成终态且结尾没有截断"
+      ]
+    }
+  ]
+}
