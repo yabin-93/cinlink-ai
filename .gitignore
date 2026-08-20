@@ -1,0 +1,13 @@
+# Generated UI-test evidence and runtime traces
+output/
+.playwright-cli/
+
+# Local encrypted credentials and environment files
+*.clixml
+.env
+.env.*
+
+# Common temporary files
+*.log
+*.tmp
+Thumbs.db
