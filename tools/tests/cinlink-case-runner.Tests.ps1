@@ -4,6 +4,7 @@ $workspace = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $casePath = Join-Path $workspace 'test-cases\cinlink-ai-core.json'
 $runnerPath = Join-Path $workspace 'tools\run-cinlink-cases.ps1'
 $submitPath = Join-Path $workspace 'tools\cinlink-submit-task.ps1'
+$restartPath = Join-Path $workspace 'tools\restart-cinlink-debug.ps1'
 
 if (-not (Test-Path -LiteralPath $casePath -PathType Leaf)) {
     throw "Expected reusable case catalog: $casePath"
@@ -71,6 +72,15 @@ if (-not $workflowPlan.manualGateBetweenCases) { throw 'Workflow execution must 
 $submitRaw = Get-Content -Raw -LiteralPath $submitPath
 if ($submitRaw -notmatch 'EvidenceDirectory') {
     throw 'The submit tool must accept a caller-provided evidence directory.'
+}
+
+$runnerRaw = Get-Content -Raw -LiteralPath $runnerPath
+if ($runnerRaw -match "restart-cinlink-debug\.ps1'[\s\S]{0,200}LASTEXITCODE") {
+    throw 'The runner must not use stale LASTEXITCODE after invoking the restart script.'
+}
+$restartRaw = Get-Content -Raw -LiteralPath $restartPath
+if ($restartRaw -notmatch 'ErrorAction SilentlyContinue') {
+    throw 'The restart tool must support launching CinLink when it is not already running.'
 }
 
 $windowsPowerShell = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'

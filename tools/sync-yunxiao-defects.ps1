@@ -1,5 +1,7 @@
 ﻿param(
-    [switch]$DryRun
+    [switch]$DryRun,
+    [string]$ConfigPath,
+    [string]$EvidenceDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,7 +13,13 @@ $workitemTypeId = '37da3a07df4d08aef2e3b393'
 $assignedTo = '68998708f9007d7e33d2960b'
 $sprintId = '8adf37ede6ec567e4e17eaebfe'
 $labelId = '04a2db058d968d47138880459e'
-$evidenceDirectory = 'C:\Users\chen\Documents\ChatGPT\test\output\ui-test\ai-core-smoke-2026-08-20'
+$runId = 'ai-core-smoke-2026-08-20'
+$evidenceDirectory = if ([string]::IsNullOrWhiteSpace($EvidenceDirectory)) {
+    'C:\Users\chen\Documents\ChatGPT\test\output\ui-test\ai-core-smoke-2026-08-20'
+}
+else {
+    [System.IO.Path]::GetFullPath($EvidenceDirectory)
+}
 $statePath = Join-Path $evidenceDirectory 'yunxiao-defects-batch-state.json'
 $resultPath = Join-Path $evidenceDirectory 'yunxiao-defects-batch-result.json'
 $errorPath = Join-Path $evidenceDirectory 'yunxiao-defects-batch-error.json'
@@ -117,7 +125,24 @@ $defects = @(
         -Evidence @('50-image-watermark-before-submit.png','51-image-watermark-complete.png','frame-image-watermark-05s.png','smoke-test-report.md')
 )
 
+if (-not [string]::IsNullOrWhiteSpace($ConfigPath)) {
+    $resolvedConfigPath = [System.IO.Path]::GetFullPath($ConfigPath)
+    if (-not (Test-Path -LiteralPath $resolvedConfigPath -PathType Leaf)) {
+        throw "缺陷配置文件不存在：$resolvedConfigPath"
+    }
+    $externalConfig = Get-Content -LiteralPath $resolvedConfigPath -Raw | ConvertFrom-Json
+    if ([string]::IsNullOrWhiteSpace($externalConfig.runId)) {
+        throw '外部缺陷配置缺少 runId。'
+    }
+    $runId = [string]$externalConfig.runId
+    $defects = @($externalConfig.defects)
+    if ($defects.Count -eq 0) {
+        throw '外部缺陷配置没有 defects。'
+    }
+}
+
 $dryRunConfig = [ordered]@{
+    runId = $runId
     organizationId = $organizationId
     projectId = $projectId
     workitemTypeId = $workitemTypeId
@@ -129,6 +154,8 @@ $dryRunConfig = [ordered]@{
     defects = @($defects | ForEach-Object {
         [ordered]@{
             key = $_.key; level = $_.level; subject = $_.subject; jobId = $_.jobId
+            matchSubjects = @($_.matchSubjects)
+            syncMarker = "<!-- cinlink-sync:${runId}:$($_.key) -->"
             evidence = @($_.evidence | ForEach-Object { Join-Path $evidenceDirectory $_ })
         }
     })
@@ -295,8 +322,9 @@ try {
 
     foreach ($defect in $defects) {
         Write-Host ("`n[{0}] {1}" -f $defect.key, $defect.subject)
-        $matching = @($existingWorkitems | Where-Object { $_.subject -ceq $defect.subject })
-        if ($matching.Count -gt 1) { throw "发现多个完全同名工作项，停止以避免更新错误目标：$($defect.subject)" }
+        $candidateSubjects = @([string]$defect.subject) + @($defect.matchSubjects | ForEach-Object { [string]$_ })
+        $matching = @($existingWorkitems | Where-Object { $candidateSubjects -ccontains $_.subject })
+        if ($matching.Count -gt 1) { throw "发现多个同根因工作项，停止以避免更新错误目标：$($candidateSubjects -join ' / ')" }
 
         $fields = $levelFields[$defect.level]
         $baseDescription = Get-BaseDescription -Defect $defect
@@ -314,7 +342,7 @@ try {
 
         if ($matching.Count -eq 1 -and $skipExisting) {
             $workitemId = $matching[0].id
-            $action = 'existing'
+            $action = 'updated-existing'
             Write-Host ("跳过创建，续传并校验现有缺陷：{0}" -f $matching[0].serialNumber)
         }
         else {
@@ -357,7 +385,18 @@ try {
         if ($downloadBlocks.Count -gt 0) {
             $evidenceSection += "`r`n`r`n### 可点击附件`r`n`r`n" + ($downloadBlocks -join "`r`n")
         }
-        $finalDescription = $baseDescription.TrimEnd() + "`r`n`r`n" + $evidenceSection
+        $syncMarker = "<!-- cinlink-sync:${runId}:$($defect.key) -->"
+        if ($action -eq 'created') {
+            $finalDescription = $syncMarker + "`r`n`r`n" + $baseDescription.TrimEnd() + "`r`n`r`n" + $evidenceSection
+        }
+        elseif ([string]$current.description -like "*$syncMarker*") {
+            $finalDescription = [string]$current.description
+            $action = 'unchanged-existing'
+        }
+        else {
+            $existingDescription = [string]$current.description
+            $finalDescription = $existingDescription.TrimEnd() + "`r`n`r`n---`r`n`r`n" + $syncMarker + "`r`n`r`n## 回归验证：$runId`r`n`r`n" + $baseDescription.TrimEnd() + "`r`n`r`n" + $evidenceSection
+        }
         $updateBody = [ordered]@{
             description = $finalDescription
             formatType = 'MARKDOWN'
@@ -370,7 +409,7 @@ try {
         $verifiedAttachments = @(Invoke-JsonRequest -Client $httpClient -Method 'GET' -Uri $attachmentsUri -Body $null -Operation '回读附件')
         $verifiedNames = @($verifiedAttachments | ForEach-Object { Get-AttachmentName -Attachment $_ })
         $missing = @($defect.evidence | Where-Object { $verifiedNames -notcontains $_ })
-        if ($verified.subject -cne $defect.subject) { throw "标题回读不一致：$($defect.key)" }
+        if ($candidateSubjects -cnotcontains $verified.subject) { throw "标题回读不一致：$($defect.key)" }
         if ($verified.assignedTo.id -ne $assignedTo) { throw "负责人回读不一致：$($defect.key)" }
         if ($missing.Count -gt 0) { throw "附件回读缺失 $($defect.key)：$($missing -join ', ')" }
         foreach ($name in @($defect.evidence | Where-Object { $_.ToLowerInvariant().EndsWith('.png') })) {
@@ -400,12 +439,13 @@ try {
         organizationId = $organizationId; projectId = $projectId
         requested = $defects.Count; verified = @($records | Where-Object { $_.status -eq 'verified' }).Count
         created = @($records | Where-Object { $_.action -eq 'created' }).Count
-        skippedExisting = @($records | Where-Object { $_.action -eq 'existing' }).Count
+        updatedExisting = @($records | Where-Object { $_.action -eq 'updated-existing' }).Count
+        skippedExisting = @($records | Where-Object { $_.action -eq 'unchanged-existing' }).Count
         items = @($records)
     }
     $result | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath $resultPath -Encoding UTF8
     if (Test-Path -LiteralPath $errorPath) { Remove-Item -LiteralPath $errorPath -Force }
-    Write-Host ("`n批量同步完成：验证 {0}/{1}，新建 {2}，续传 {3}。" -f $result.verified, $result.requested, $result.created, $result.skippedExisting) -ForegroundColor Green
+    Write-Host ("`n批量同步完成：验证 {0}/{1}，新建 {2}，更新 {3}，幂等跳过 {4}。" -f $result.verified, $result.requested, $result.created, $result.updatedExisting, $result.skippedExisting) -ForegroundColor Green
     Write-Host ("结果记录：{0}" -f $resultPath)
 }
 catch {

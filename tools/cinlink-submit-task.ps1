@@ -33,7 +33,8 @@ public static class CinLinkWindowFocus {
 function Invoke-CdpEvaluate {
     param([Parameter(Mandatory = $true)][string]$Expression)
     $params = @{ expression = $Expression; returnByValue = $true } | ConvertTo-Json -Compress
-    node $cdp Runtime.evaluate $params
+    $paramsBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($params))
+    node $cdp Runtime.evaluate --params-base64 $paramsBase64
     if ($LASTEXITCODE -ne 0) { throw 'CDP evaluation failed.' }
 }
 
@@ -67,7 +68,8 @@ for ($index = 0; $index -lt $Files.Count; $index++) {
 
 Invoke-CdpEvaluate '(()=>{const e=document.querySelector(".composer-prompt-editor");e.innerHTML="";e.focus();return true})()'
 $textParams = @{ text = $Prompt } | ConvertTo-Json -Compress
-node $cdp Input.insertText $textParams
+$textParamsBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($textParams))
+node $cdp Input.insertText --params-base64 $textParamsBase64
 if ($LASTEXITCODE -ne 0) { throw 'CDP text input failed.' }
 Start-Sleep -Seconds 1
 

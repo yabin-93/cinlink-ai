@@ -92,7 +92,6 @@ $records = @()
 if (-not $NoRestart) {
     Write-Host '正在以 CDP 调试模式重启 CinLink...'
     & (Join-Path $PSScriptRoot 'restart-cinlink-debug.ps1') | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw 'CinLink 调试模式启动失败。' }
 }
 
 for ($index = 0; $index -lt $selectedCases.Count; $index++) {

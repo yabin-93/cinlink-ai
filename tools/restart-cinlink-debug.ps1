@@ -1,18 +1,16 @@
-param(
+﻿param(
     [int]$Port = 9222
 )
 
-$main = Get-Process CinLink -ErrorAction Stop |
+$main = Get-Process CinLink -ErrorAction SilentlyContinue |
     Where-Object { $_.MainWindowHandle -ne 0 } |
     Select-Object -First 1
 
-if (-not $main) {
-    throw 'CinLink main window not found.'
-}
-
-$null = $main.CloseMainWindow()
-if (-not $main.WaitForExit(10000)) {
-    throw 'CinLink did not exit after a normal close; stopped before forcing termination.'
+if ($main) {
+    $null = $main.CloseMainWindow()
+    if (-not $main.WaitForExit(10000)) {
+        throw 'CinLink did not exit after a normal close; stopped before forcing termination.'
+    }
 }
 
 $exePath = 'D:\Users\chen\AppData\Local\Programs\CinLink\CinLink.exe'
