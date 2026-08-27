@@ -14,7 +14,6 @@ $assignedTo = '68998708f9007d7e33d2960b'
 $sprintId = '8adf37ede6ec567e4e17eaebfe'
 $labelId = '04a2db058d968d47138880459e'
 $runId = 'ai-core-smoke-2026-08-20'
-$testTime = '2026-08-20'
 $evidenceDirectory = if ([string]::IsNullOrWhiteSpace($EvidenceDirectory)) {
     'C:\Users\chen\Documents\ChatGPT\test\output\ui-test\ai-core-smoke-2026-08-20'
 }
@@ -25,9 +24,6 @@ $statePath = Join-Path $evidenceDirectory 'yunxiao-defects-batch-state.json'
 $resultPath = Join-Path $evidenceDirectory 'yunxiao-defects-batch-result.json'
 $errorPath = Join-Path $evidenceDirectory 'yunxiao-defects-batch-error.json'
 $skipExisting = $true
-$reopenExisting = $true
-$existingTargetStatus = '再次打开'
-$commentPreviewMaxWidth = 1000
 
 $levelFields = @{
     P0 = @{ priority = '946f97777897cdeac653bbc22a'; seriousLevel = 'b160e371d7f312ac01b0a4e513' }
@@ -139,9 +135,6 @@ if (-not [string]::IsNullOrWhiteSpace($ConfigPath)) {
         throw '外部缺陷配置缺少 runId。'
     }
     $runId = [string]$externalConfig.runId
-    if (-not [string]::IsNullOrWhiteSpace($externalConfig.testTime)) {
-        $testTime = [string]$externalConfig.testTime
-    }
     $defects = @($externalConfig.defects)
     if ($defects.Count -eq 0) {
         throw '外部缺陷配置没有 defects。'
@@ -150,7 +143,6 @@ if (-not [string]::IsNullOrWhiteSpace($ConfigPath)) {
 
 $dryRunConfig = [ordered]@{
     runId = $runId
-    testTime = $testTime
     organizationId = $organizationId
     projectId = $projectId
     workitemTypeId = $workitemTypeId
@@ -158,25 +150,13 @@ $dryRunConfig = [ordered]@{
     sprint = $sprintId
     labels = @($labelId)
     skipExisting = $skipExisting
-    reopenExisting = $reopenExisting
-    existingTargetStatus = $existingTargetStatus
-    existingResultChannel = 'comment'
-    existingResultFormat = 'RICHTEXT'
-    commentPreviewMaxWidth = $commentPreviewMaxWidth
-    createFields = @('subject', 'description', 'formatType', 'assignedTo', 'spaceId', 'workitemTypeId', 'sprint', 'labels', 'customFieldValues')
     updateFields = @('description', 'formatType', 'assignedTo')
-    existingUpdateFields = @('assignedTo', 'status')
     defects = @($defects | ForEach-Object {
         [ordered]@{
             key = $_.key; level = $_.level; subject = $_.subject; jobId = $_.jobId
             matchSubjects = @($_.matchSubjects)
             syncMarker = "<!-- cinlink-sync:${runId}:$($_.key) -->"
-            commentPreviewMarker = "<!-- cinlink-sync-preview-v3:${runId}:$($_.key) -->"
             evidence = @($_.evidence | ForEach-Object { Join-Path $evidenceDirectory $_ })
-            commentPreviewEvidence = @($_.evidence | Where-Object { $_.ToLowerInvariant().EndsWith('.png') } | ForEach-Object {
-                $previewName = [System.IO.Path]::GetFileNameWithoutExtension($_) + '-comment-preview.png'
-                Join-Path $evidenceDirectory $previewName
-            })
         }
     })
 }
@@ -199,7 +179,7 @@ function Get-BaseDescription {
 
 - 应用：CinLink 1.6.19 / Electron 35.2.0 / Windows
 - 测试类型：AI 核心工作流冒烟测试
-- 测试时间：$testTime
+- 测试时间：2026-08-20
 - 测试素材：$($Defect.material)
 
 ## Job ID
@@ -256,62 +236,6 @@ function Invoke-JsonRequest {
     finally { if ($null -ne $content) { $content.Dispose() } }
 }
 
-function Get-WorkflowStatus {
-    param(
-        [System.Net.Http.HttpClient]$Client,
-        [string]$WorkitemUri,
-        [string]$StatusName
-    )
-    $response = Invoke-JsonRequest -Client $Client -Method 'GET' -Uri "$WorkitemUri/workflow" -Body $null -Operation '读取工作项工作流'
-    $workflow = if ($null -ne $response.workflow) { $response.workflow } else { $response }
-    $matchingStatuses = @($workflow.statuses | Where-Object { [string]$_.name -ceq $StatusName })
-    if ($matchingStatuses.Count -ne 1) {
-        throw ('工作流状态「{0}」必须唯一，实际匹配 {1} 个。' -f $StatusName, $matchingStatuses.Count)
-    }
-    $identifier = [string]$matchingStatuses[0].identifier
-    if ([string]::IsNullOrWhiteSpace($identifier)) {
-        $identifier = [string]$matchingStatuses[0].id
-    }
-    if ([string]::IsNullOrWhiteSpace($identifier)) {
-        throw ('工作流状态「{0}」缺少状态标识。' -f $StatusName)
-    }
-    return [ordered]@{ name = $StatusName; identifier = $identifier }
-}
-
-function Get-WorkitemStatus {
-    param([object]$Workitem)
-    $statusName = $null
-    $statusIdentifier = [string]$Workitem.statusIdentifier
-    if ($Workitem.status -is [string]) {
-        $statusName = [string]$Workitem.status
-    }
-    elseif ($null -ne $Workitem.status) {
-        $statusName = [string]$Workitem.status.name
-        if ([string]::IsNullOrWhiteSpace($statusIdentifier)) {
-            $statusIdentifier = [string]$Workitem.status.identifier
-        }
-        if ([string]::IsNullOrWhiteSpace($statusIdentifier)) {
-            $statusIdentifier = [string]$Workitem.status.id
-        }
-    }
-    if ([string]::IsNullOrWhiteSpace($statusName)) {
-        $statusName = [string]$Workitem.statusName
-    }
-    return [ordered]@{ name = $statusName; identifier = $statusIdentifier }
-}
-
-function Remove-SyncedRegressionSection {
-    param(
-        [string]$Description,
-        [string]$SyncMarker
-    )
-    if ([string]::IsNullOrEmpty($Description) -or [string]::IsNullOrWhiteSpace($SyncMarker)) {
-        return $Description
-    }
-    $pattern = '(?s)\r?\n\r?\n---\r?\n\r?\n' + [regex]::Escape($SyncMarker) + '.*$'
-    return [regex]::Replace($Description, $pattern, '')
-}
-
 function Get-MediaType {
     param([string]$Path)
     switch ([System.IO.Path]::GetExtension($Path).ToLowerInvariant()) {
@@ -351,101 +275,6 @@ function Get-EmbedUrl {
     $identifier = if ($Attachment.id) { $Attachment.id } else { $Attachment.fileIdentifier }
     if ([string]::IsNullOrWhiteSpace($identifier)) { throw "附件缺少永久标识：$Name" }
     return "https://devops.aliyun.com/projex/api/workitem/file/url?fileIdentifier=$identifier"
-}
-
-function Get-CommentPreviewName {
-    param([string]$Name)
-    return ([System.IO.Path]::GetFileNameWithoutExtension($Name) + '-comment-preview.png')
-}
-
-function New-CommentPreview {
-    param(
-        [string]$SourcePath,
-        [string]$DestinationPath,
-        [int]$MaxWidth
-    )
-    Add-Type -AssemblyName System.Drawing
-    $sourceImage = $null
-    $previewImage = $null
-    $graphics = $null
-    try {
-        $sourceImage = [System.Drawing.Image]::FromFile($SourcePath)
-        $previewWidth = [Math]::Min($sourceImage.Width, $MaxWidth)
-        $previewHeight = [int][Math]::Round($sourceImage.Height * ($previewWidth / [double]$sourceImage.Width))
-        $previewImage = [System.Drawing.Bitmap]::new($previewWidth, $previewHeight)
-        $graphics = [System.Drawing.Graphics]::FromImage($previewImage)
-        $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-        $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-        $graphics.DrawImage($sourceImage, 0, 0, $previewWidth, $previewHeight)
-        $previewImage.Save($DestinationPath, [System.Drawing.Imaging.ImageFormat]::Png)
-    }
-    finally {
-        if ($null -ne $graphics) { $graphics.Dispose() }
-        if ($null -ne $previewImage) { $previewImage.Dispose() }
-        if ($null -ne $sourceImage) { $sourceImage.Dispose() }
-    }
-}
-
-function Get-CommentRichTextContent {
-    param(
-        [string]$Marker,
-        [string]$TestTime,
-        [string]$JobId,
-        [string[]]$Actual,
-        [string[]]$Expected,
-        [object[]]$Images
-    )
-    $htmlParts = @(
-        '<article class="4ever-article">',
-        $Marker,
-        '<p><span>补充：完整截图预览</span></p>',
-        '<p><span>以下截图已等比例缩小以完整适配评论区；点击“查看完整原图”可打开原始分辨率。</span></p>'
-    )
-    $jsonChildren = @(
-        ,@('p', @{}, @('span', @{ 'data-type' = 'text' }, @('span', @{ 'data-type' = 'leaf' }, '补充：完整截图预览'))),
-        ,@('p', @{}, @('span', @{ 'data-type' = 'text' }, @('span', @{ 'data-type' = 'leaf' }, '以下截图已等比例缩小以完整适配评论区；点击“查看完整原图”可打开原始分辨率。')))
-    )
-    $resultLines = @("测试时间：$TestTime", "Job ID：$JobId", '本次实际结果：') + @($Actual) + @('预期结果：') + @($Expected)
-    foreach ($resultLine in $resultLines) {
-        $encodedLine = [System.Net.WebUtility]::HtmlEncode([string]$resultLine)
-        $htmlParts += "<p><span>$encodedLine</span></p>"
-        $jsonChildren += ,@('p', @{}, @('span', @{ 'data-type' = 'text' }, @('span', @{ 'data-type' = 'leaf' }, [string]$resultLine)))
-    }
-    $imageIndex = 0
-    foreach ($image in $Images) {
-        $imageIndex++
-        $name = [System.Net.WebUtility]::HtmlEncode([string]$image.Name)
-        $previewUrl = [System.Net.WebUtility]::HtmlEncode([string]$image.PreviewUrl)
-        $originalUrl = [System.Net.WebUtility]::HtmlEncode([string]$image.OriginalUrl)
-        $width = [double]$image.Width
-        $height = [double]$image.Height
-        $size = [long]$image.Size
-        $htmlParts += "<p><span>$name</span></p>"
-        $htmlParts += ('<p><span></span><img src="{0}" style="width:{1}px;height:{2}px"><span></span></p>' -f $previewUrl, $width, $height)
-        $htmlParts += ('<p><a href="{0}">查看完整原图</a></p>' -f $originalUrl)
-        $jsonChildren += ,@('p', @{}, @('span', @{ 'data-type' = 'text' }, @('span', @{ 'data-type' = 'leaf' }, [string]$image.Name)))
-        $jsonChildren += ,@(
-            'p', @{},
-            @('span', @{ 'data-type' = 'text' }, @('span', @{ 'data-type' = 'leaf' }, '')),
-            @('img', @{
-                id = "cinlink-preview-$imageIndex"
-                name = [string]$image.Name
-                size = $size
-                width = $width
-                height = $height
-                rotation = 0
-                src = [string]$image.PreviewUrl
-            }, @('span', @{ 'data-type' = 'text' }, @('span', @{ 'data-type' = 'leaf' }, ''))),
-            @('span', @{ 'data-type' = 'text' }, @('span', @{ 'data-type' = 'leaf' }, ''))
-        )
-        $jsonChildren += ,@('p', @{}, @('a', @{ href = [string]$image.OriginalUrl }, @('span', @{ 'data-type' = 'text' }, @('span', @{ 'data-type' = 'leaf' }, '查看完整原图'))))
-    }
-    $htmlParts += '</article>'
-    $jsonMlValue = @('root', @{}) + $jsonChildren
-    return ([ordered]@{
-        htmlValue = ($htmlParts -join '')
-        jsonMLValue = $jsonMlValue
-    } | ConvertTo-Json -Depth 20 -Compress)
 }
 
 function Send-Attachment {
@@ -514,7 +343,6 @@ try {
         if ($matching.Count -eq 1 -and $skipExisting) {
             $workitemId = $matching[0].id
             $action = 'updated-existing'
-            $matchedExisting = $true
             Write-Host ("跳过创建，续传并校验现有缺陷：{0}" -f $matching[0].serialNumber)
         }
         else {
@@ -523,34 +351,16 @@ try {
             if ([string]::IsNullOrWhiteSpace($created.id)) { throw "创建响应缺少工作项 ID：$($defect.key)" }
             $workitemId = $created.id
             $action = 'created'
-            $matchedExisting = $false
         }
 
         $workitemUri = "$baseUri/workitems/$workitemId"
         $attachmentsUri = "$workitemUri/attachments"
-        $commentsUri = "$workitemUri/comments"
         $current = Invoke-JsonRequest -Client $httpClient -Method 'GET' -Uri $workitemUri -Body $null -Operation '读取工作项'
-        $syncMarker = "<!-- cinlink-sync:${runId}:$($defect.key) -->"
-        $createdByThisRun = $matchedExisting -and ([string]$current.description).TrimStart().StartsWith($syncMarker, [System.StringComparison]::Ordinal)
-        $targetStatus = $null
-        if ($matchedExisting -and -not $createdByThisRun -and $reopenExisting) {
-            $targetStatus = Get-WorkflowStatus -Client $httpClient -WorkitemUri $workitemUri -StatusName $existingTargetStatus
-        }
-        $commentPreviewMap = @{}
-        if ($matchedExisting -and -not $createdByThisRun) {
-            foreach ($name in @($defect.evidence | Where-Object { $_.ToLowerInvariant().EndsWith('.png') })) {
-                $previewName = Get-CommentPreviewName -Name $name
-                $previewPath = Join-Path $evidenceDirectory $previewName
-                New-CommentPreview -SourcePath (Join-Path $evidenceDirectory $name) -DestinationPath $previewPath -MaxWidth $commentPreviewMaxWidth
-                $commentPreviewMap[$name] = $previewName
-            }
-        }
-        $requiredEvidenceNames = @($defect.evidence) + @($commentPreviewMap.Values)
         $attachments = @(Invoke-JsonRequest -Client $httpClient -Method 'GET' -Uri $attachmentsUri -Body $null -Operation '读取附件')
         $attachmentMap = @{}
         foreach ($attachment in $attachments) { $attachmentMap[(Get-AttachmentName -Attachment $attachment)] = $attachment }
 
-        foreach ($name in $requiredEvidenceNames) {
+        foreach ($name in $defect.evidence) {
             if ($attachmentMap.ContainsKey($name)) {
                 Write-Host ("跳过已存在附件：{0}" -f $name)
                 continue
@@ -575,130 +385,36 @@ try {
         if ($downloadBlocks.Count -gt 0) {
             $evidenceSection += "`r`n`r`n### 可点击附件`r`n`r`n" + ($downloadBlocks -join "`r`n")
         }
-        $commentImages = @()
-        foreach ($name in $defect.evidence) {
-            $attachment = $attachmentMap[$name]
-            if ($name.ToLowerInvariant().EndsWith('.png') -and $commentPreviewMap.ContainsKey($name)) {
-                $previewName = $commentPreviewMap[$name]
-                $previewAttachment = $attachmentMap[$previewName]
-                $previewPath = Join-Path $evidenceDirectory $previewName
-                $previewImage = [System.Drawing.Image]::FromFile($previewPath)
-                try {
-                    $commentImages += [ordered]@{
-                        Name = $name
-                        PreviewUrl = Get-EmbedUrl -Attachment $previewAttachment -Name $previewName
-                        OriginalUrl = Get-EmbedUrl -Attachment $attachment -Name $name
-                        Width = $previewImage.Width
-                        Height = $previewImage.Height
-                        Size = (Get-Item -LiteralPath $previewPath).Length
-                    }
-                }
-                finally {
-                    $previewImage.Dispose()
-                }
-            }
-        }
-        $commentPreviewMarker = "<!-- cinlink-sync-preview-v3:${runId}:$($defect.key) -->"
+        $syncMarker = "<!-- cinlink-sync:${runId}:$($defect.key) -->"
         if ($action -eq 'created') {
             $finalDescription = $syncMarker + "`r`n`r`n" + $baseDescription.TrimEnd() + "`r`n`r`n" + $evidenceSection
-            $commentContent = $null
-            $descriptionNeedsRepair = $false
         }
-        elseif ($createdByThisRun) {
+        elseif ([string]$current.description -like "*$syncMarker*") {
             $finalDescription = [string]$current.description
-            $commentContent = $null
-            $descriptionNeedsRepair = $false
             $action = 'unchanged-existing'
         }
         else {
-            $finalDescription = Remove-SyncedRegressionSection -Description ([string]$current.description) -SyncMarker $syncMarker
-            $descriptionNeedsRepair = $finalDescription -cne [string]$current.description
-            $commentContent = Get-CommentRichTextContent -Marker $commentPreviewMarker `
-                -TestTime $testTime -JobId ([string]$defect.jobId) `
-                -Actual @($defect.actual) -Expected @($defect.expected) -Images $commentImages
+            $existingDescription = [string]$current.description
+            $finalDescription = $existingDescription.TrimEnd() + "`r`n`r`n---`r`n`r`n" + $syncMarker + "`r`n`r`n## 回归验证：$runId`r`n`r`n" + $baseDescription.TrimEnd() + "`r`n`r`n" + $evidenceSection
         }
-
-        $commentCreated = $false
-        $verifiedComment = $null
-        if (-not [string]::IsNullOrWhiteSpace($commentContent)) {
-            $comments = @(Invoke-JsonRequest -Client $httpClient -Method 'GET' -Uri $commentsUri -Body $null -Operation '读取评论')
-            $matchingComments = @($comments | Where-Object { [string]$_.content -like "*$commentPreviewMarker*" })
-            if ($matchingComments.Count -gt 1) {
-                throw "发现多个同一批次回归评论，停止以避免重复：$($defect.key)"
-            }
-            if ($matchingComments.Count -eq 0) {
-                Write-Host '正在写入本次回归评论...'
-                $commentBody = [ordered]@{ content = $commentContent; contentFormat = 'RICHTEXT' }
-                $null = Invoke-JsonRequest -Client $httpClient -Method 'POST' -Uri $commentsUri -Body $commentBody -Operation '创建回归评论'
-                $commentCreated = $true
-            }
+        $updateBody = [ordered]@{
+            description = $finalDescription
+            formatType = 'MARKDOWN'
+            assignedTo = $assignedTo
         }
-
-        $updateBody = [ordered]@{}
-        if ($action -eq 'created') {
-            $updateBody.description = $finalDescription
-            $updateBody.formatType = 'MARKDOWN'
-            $updateBody.assignedTo = $assignedTo
-        }
-        else {
-            if ($descriptionNeedsRepair) {
-                $updateBody.description = $finalDescription
-                $updateBody.formatType = 'MARKDOWN'
-            }
-            if ($current.assignedTo.id -ne $assignedTo) {
-                $updateBody.assignedTo = $assignedTo
-            }
-            if ($null -ne $targetStatus) {
-                $currentStatus = Get-WorkitemStatus -Workitem $current
-                if ($currentStatus.identifier -ne $targetStatus.identifier) {
-                    $updateBody.status = $targetStatus.identifier
-                }
-            }
-        }
-        if ($updateBody.Count -gt 0) {
-            Write-Host '正在更新必要的工作项字段...'
-            $null = Invoke-JsonRequest -Client $httpClient -Method 'PUT' -Uri $workitemUri -Body $updateBody -Operation '更新工作项'
-        }
-        elseif (-not $commentCreated) {
-            $action = 'unchanged-existing'
-        }
+        Write-Host '正在更新描述和负责人...'
+        $null = Invoke-JsonRequest -Client $httpClient -Method 'PUT' -Uri $workitemUri -Body $updateBody -Operation '更新工作项'
 
         $verified = Invoke-JsonRequest -Client $httpClient -Method 'GET' -Uri $workitemUri -Body $null -Operation '回读工作项'
         $verifiedAttachments = @(Invoke-JsonRequest -Client $httpClient -Method 'GET' -Uri $attachmentsUri -Body $null -Operation '回读附件')
         $verifiedNames = @($verifiedAttachments | ForEach-Object { Get-AttachmentName -Attachment $_ })
-        $missing = @($requiredEvidenceNames | Where-Object { $verifiedNames -notcontains $_ })
+        $missing = @($defect.evidence | Where-Object { $verifiedNames -notcontains $_ })
         if ($candidateSubjects -cnotcontains $verified.subject) { throw "标题回读不一致：$($defect.key)" }
         if ($verified.assignedTo.id -ne $assignedTo) { throw "负责人回读不一致：$($defect.key)" }
-        if (-not [string]::IsNullOrWhiteSpace($commentContent)) {
-            $verifiedComments = @(Invoke-JsonRequest -Client $httpClient -Method 'GET' -Uri $commentsUri -Body $null -Operation '回读评论')
-            $verifiedMatchingComments = @($verifiedComments | Where-Object { [string]$_.content -like "*$commentPreviewMarker*" })
-            if ($verifiedMatchingComments.Count -ne 1) {
-                throw "回归评论回读不一致：$($defect.key)"
-            }
-            $verifiedComment = $verifiedMatchingComments[0]
-            if ([string]$verified.description -like "*$syncMarker*") {
-                throw "既有缺陷描述仍包含本轮回归段落：$($defect.key)"
-            }
-        }
-        if ($null -ne $targetStatus) {
-            $verifiedStatus = Get-WorkitemStatus -Workitem $verified
-            if ($verifiedStatus.identifier -ne $targetStatus.identifier) {
-                throw "状态标识回读不一致 $($defect.key)：期望 $($targetStatus.identifier)，实际 $($verifiedStatus.identifier)"
-            }
-            if (-not [string]::IsNullOrWhiteSpace($verifiedStatus.name) -and $verifiedStatus.name -ne $existingTargetStatus) {
-                throw "状态名称回读不一致 $($defect.key)：期望 $existingTargetStatus，实际 $($verifiedStatus.name)"
-            }
-        }
         if ($missing.Count -gt 0) { throw "附件回读缺失 $($defect.key)：$($missing -join ', ')" }
         foreach ($name in @($defect.evidence | Where-Object { $_.ToLowerInvariant().EndsWith('.png') })) {
             $url = Get-EmbedUrl -Attachment $attachmentMap[$name] -Name $name
-            $verifiedEvidenceText = if ($null -ne $verifiedComment) { [string]$verifiedComment.content } else { [string]$verified.description }
-            if ($verifiedEvidenceText -notlike "*$url*") { throw "回读内容缺少图片永久链接 $($defect.key)：$name" }
-            if ($null -ne $verifiedComment) {
-                $previewName = $commentPreviewMap[$name]
-                $previewUrl = Get-EmbedUrl -Attachment $attachmentMap[$previewName] -Name $previewName
-                if ($verifiedEvidenceText -notlike "*$previewUrl*") { throw "回归评论缺少完整截图预览 $($defect.key)：$name" }
-            }
+            if ([string]$verified.description -notlike "*$url*") { throw "描述缺少图片永久链接 $($defect.key)：$name" }
         }
         $priorityField = @($verified.customFieldValues | Where-Object { $_.fieldId -eq 'priority' })
         $severityField = @($verified.customFieldValues | Where-Object { $_.fieldId -eq 'seriousLevel' })
@@ -709,11 +425,7 @@ try {
             key = $defect.key; action = $action; workitemId = $workitemId
             serialNumber = $verified.serialNumber; subject = $verified.subject
             assignedTo = $verified.assignedTo; level = $defect.level
-            attachmentCount = $verifiedAttachments.Count; verifiedEvidence = @($requiredEvidenceNames)
-            reopened = [bool]($null -ne $targetStatus)
-            regressionChannel = if ($null -ne $verifiedComment) { 'comment' } else { 'description' }
-            regressionCommentId = if ($null -ne $verifiedComment) { $verifiedComment.id } else { $null }
-            verifiedWorkitemStatus = if ($null -ne $targetStatus) { [ordered]@{ name = $existingTargetStatus; identifier = $targetStatus.identifier } } else { $null }
+            attachmentCount = $verifiedAttachments.Count; verifiedEvidence = @($defect.evidence)
             url = "https://devops.aliyun.com/projex/project/$projectId/bug/$workitemId"
             status = 'verified'
         }

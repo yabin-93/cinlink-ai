@@ -55,10 +55,7 @@ if (-not $single.runDirectory.StartsWith((Join-Path $workspace 'output\ui-test\a
 $allJson = & $runnerPath -All -DryRun
 $all = $allJson | ConvertFrom-Json
 if (@($all.cases).Count -ne 28) { throw 'All-case dry-run must select all twenty-eight cases.' }
-if ($all.manualGateBetweenCases) { throw 'Hybrid all-case execution must replace the between-case prompt with a CDP terminal gate.' }
-if ($all.executionMode -ne 'hybrid' -or $all.executionStrategy.terminalGate -ne 'cdp') {
-    throw 'All-case execution must default to the hybrid CDP terminal gate.'
-}
+if (-not $all.manualGateBetweenCases) { throw 'All-case execution must require a manual serial gate.' }
 $expectedOrder = @(1..28 | ForEach-Object { 'CL-AI-{0:D3}' -f $_ })
 if ((@($all.cases.id) -join ',') -ne ($expectedOrder -join ',')) {
     throw 'All-case execution must be ordered from CL-AI-001 through CL-AI-028.'
@@ -70,7 +67,7 @@ if (@($workflowPlan.cases).Count -ne 4) { throw 'Workflow dry-run must select fo
 if (@($workflowPlan.cases | Where-Object { $_.workflow -ne 'subtitle' }).Count -ne 0) {
     throw 'Workflow dry-run selected a case from another workflow.'
 }
-if ($workflowPlan.manualGateBetweenCases) { throw 'Workflow execution must use the automatic CDP terminal gate.' }
+if (-not $workflowPlan.manualGateBetweenCases) { throw 'Workflow execution must require a manual serial gate.' }
 
 $submitRaw = Get-Content -Raw -LiteralPath $submitPath
 if ($submitRaw -notmatch 'EvidenceDirectory') {

@@ -12,21 +12,11 @@
     [string]$CatalogPath,
     [string]$RunId,
     [switch]$NoRestart,
-    [switch]$DryRun,
-    [ValidateSet('Hybrid')]
-    [string]$ExecutionMode = 'Hybrid',
-    [string]$SubmitterPath,
-    [string]$TerminalWaiterPath,
-    [string]$DesktopActionPath,
-    [string]$MediaValidatorPath
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
-if ([string]::IsNullOrWhiteSpace($SubmitterPath)) { $SubmitterPath = Join-Path $PSScriptRoot 'cinlink-submit-task.ps1' }
-if ([string]::IsNullOrWhiteSpace($TerminalWaiterPath)) { $TerminalWaiterPath = Join-Path $PSScriptRoot 'wait-cinlink-terminal.ps1' }
-if ([string]::IsNullOrWhiteSpace($DesktopActionPath)) { $DesktopActionPath = Join-Path $PSScriptRoot 'invoke-cinlink-desktop-actions.ps1' }
-if ([string]::IsNullOrWhiteSpace($MediaValidatorPath)) { $MediaValidatorPath = Join-Path $PSScriptRoot 'validate-cinlink-media.ps1' }
 if ([string]::IsNullOrWhiteSpace($CatalogPath)) {
     $CatalogPath = Join-Path $workspace 'test-cases\cinlink-ai-core.json'
 }
@@ -67,16 +57,7 @@ $plan = [ordered]@{
     suite = $catalog.suite
     runId = $RunId
     runDirectory = $runDirectory
-    executionMode = $ExecutionMode.ToLowerInvariant()
-    executionStrategy = [ordered]@{
-        submission = 'repository-script'
-        terminalGate = 'cdp'
-        desktopActions = 'open-computer-use'
-        mediaValidation = 'ffprobe'
-        scriptTests = 'pester'
-        browserAutomation = 'disabled'
-    }
-    manualGateBetweenCases = $false
+    manualGateBetweenCases = ($selectedCases.Count -gt 1)
     cases = @($selectedCases | ForEach-Object {
         [ordered]@{
             id = $_.id
@@ -94,12 +75,6 @@ $plan = [ordered]@{
 if ($DryRun) {
     $plan | ConvertTo-Json -Depth 10
     return
-}
-
-foreach ($toolPath in @($SubmitterPath, $TerminalWaiterPath, $DesktopActionPath, $MediaValidatorPath)) {
-    if (-not (Test-Path -LiteralPath $toolPath -PathType Leaf)) {
-        throw "Hybrid execution tool does not exist: $toolPath"
-    }
 }
 
 foreach ($case in $selectedCases) {
@@ -129,51 +104,18 @@ for ($index = 0; $index -lt $selectedCases.Count; $index++) {
     }
 
     $startedAt = (Get-Date).ToString('o')
-    $submitOutput = @(& $SubmitterPath `
+    & (Join-Path $PSScriptRoot 'cinlink-submit-task.ps1') `
         -Prompt $case.prompt `
         -Files @($case.files) `
         -EvidenceName $case.evidenceName `
-        -EvidenceDirectory $runDirectory)
-    $submitOutput | Out-Host
-
-    $desktopResult = $null
-    if (@($case.manualActions).Count -gt 0) {
-        $desktopOutput = @(& $DesktopActionPath `
-            -CaseId $case.id `
-            -ManualActions @($case.manualActions) `
-            -EvidenceDirectory $runDirectory `
-            -EvidenceName $case.evidenceName)
-        $desktopOutput | Out-Host
-        $desktopResult = $desktopOutput | Select-Object -Last 1
-    }
-
-    $terminalOutput = @(& $TerminalWaiterPath `
-        -Prompt $case.prompt `
-        -TimeoutMinutes $case.timeoutMinutes `
-        -EvidenceDirectory $runDirectory `
-        -EvidenceName $case.evidenceName)
-    $terminalOutput | Out-Host
-    $terminalResult = $terminalOutput | Select-Object -Last 1
-    if ($null -eq $terminalResult -or [string]::IsNullOrWhiteSpace([string]$terminalResult.status)) {
-        throw "Terminal waiter returned no status for $($case.id)."
-    }
-
-    $mediaOutput = @(& $MediaValidatorPath `
-        -Artifacts @($terminalResult.artifacts) `
-        -EvidenceDirectory $runDirectory `
-        -EvidenceName $case.evidenceName)
-    $mediaOutput | Out-Host
-    $mediaResult = $mediaOutput | Select-Object -Last 1
+        -EvidenceDirectory $runDirectory
+    if ($LASTEXITCODE -ne 0) { throw "提交用例失败：$($case.id)" }
 
     $records += [ordered]@{
         id = $case.id
         name = $case.name
-        status = [string]$terminalResult.status
+        status = 'submitted'
         submittedAt = $startedAt
-        finishedAt = (Get-Date).ToString('o')
-        jobId = $terminalResult.jobId
-        desktopActions = $desktopResult
-        mediaValidation = $mediaResult
         timeoutMinutes = $case.timeoutMinutes
         expected = @($case.expected)
         manualActions = @($case.manualActions)
@@ -184,20 +126,16 @@ for ($index = 0; $index -lt $selectedCases.Count; $index++) {
         suite = $catalog.suite
         runId = $RunId
         runDirectory = $runDirectory
-        executionMode = $ExecutionMode.ToLowerInvariant()
-        executionStrategy = $plan.executionStrategy
         updatedAt = (Get-Date).ToString('o')
         cases = @($records)
     } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 
-    if ([string]$terminalResult.status -eq 'timeout') {
-        throw "用例 $($case.id) 未在 $($case.timeoutMinutes) 分钟内进入终态；为防止任务重叠，已停止后续提交。"
+    if ($index -lt ($selectedCases.Count - 1)) {
+        Write-Host ''
+        Write-Host '请等待当前任务结束，完成结果、积分和证据检查后再继续。' -ForegroundColor Yellow
+        $null = Read-Host '确认当前任务已结束后按 Enter 提交下一条；按 Ctrl+C 可安全停止'
     }
 }
 
 Write-Host ("`n用例提交完成。运行记录：{0}" -f $manifestPath) -ForegroundColor Green
-Write-Host '注意：终态由 CDP 自动判定；最终通过/失败仍需结合媒体校验和人工视觉检查。'
-$finalResult = Get-Content -Raw -Encoding UTF8 -LiteralPath $manifestPath | ConvertFrom-Json
-$finalResult | Add-Member -NotePropertyName executionMode -NotePropertyValue $ExecutionMode.ToLowerInvariant() -Force
-$finalResult | Add-Member -NotePropertyName executionStrategy -NotePropertyValue ([pscustomobject]$plan.executionStrategy) -Force
-$finalResult | ConvertTo-Json -Depth 15
+Write-Host '注意：submitted 只表示已提交；最终通过/失败仍需根据结果文件和人工检查更新报告。'
