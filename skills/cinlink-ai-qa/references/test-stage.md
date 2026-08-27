@@ -19,12 +19,16 @@ Exactly one of `-All`, `-Workflow`, or `-CaseId` is required. Workflows are `sub
 ## Execution contract
 
 1. Confirm the selected scope and source case file.
-2. Run the stage-one entrypoint.
-3. For serial runs, honor the manual gate between tasks so credit and status evidence do not overlap.
-4. Report the absolute run-directory path.
-5. Inspect `run-manifest.json`, `execution-observations.json`, `smoke-test-report.md`, screenshots, downloads, and diagnostics.
+2. Run the stage-one entrypoint in its default `Hybrid` mode. Do not substitute Playwright.
+3. Let repository scripts submit each case and let the CDP terminal gate finish before the next case is submitted.
+4. For cases with `manualActions`, use the Open Computer Use snapshot and complete the displayed desktop-action gate before terminal polling continues.
+5. Use ffprobe validation when a result artifact has a local filesystem path; record `no-local-artifact` when it does not.
+6. Report the absolute run-directory path.
+7. Inspect `run-manifest.json`, `execution-observations.json`, `smoke-test-report.md`, screenshots, downloads, and diagnostics.
 
 Stage one never calls Yunxiao. A `submitted` state proves only that the task was submitted, not that the case passed.
+
+The run manifest records `executionMode: hybrid` and the concrete strategy: repository-script submission, CDP terminal gate, Open Computer Use desktop actions, ffprobe media validation, Pester script tests, and disabled browser automation.
 
 ## Review handoff
 

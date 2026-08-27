@@ -54,6 +54,8 @@ Skill 会把测试和云效同步保持为两个独立阶段，也不会执行 G
 & ".\tools\run-cinlink-test-stage.ps1" -CaseId "CL-AI-010"
 ```
 
+入口默认使用 `Hybrid` 执行策略：仓库脚本负责上传和提交，Electron CDP 负责等待任务终态，Open Computer Use 负责需要人工参与的桌面动作，`ffprobe` 负责校验已落地到本机的视频结果。Playwright 浏览器自动化在该策略中明确禁用。
+
 先检查执行范围和提示词、不操作 CinLink：
 
 ```powershell
@@ -82,7 +84,9 @@ Skill 会把测试和云效同步保持为两个独立阶段，也不会执行 G
 & ".\tools\run-cinlink-test-stage.ps1" -All
 ```
 
-每条任务提交后，脚本会暂停。必须等待当前任务结束，完成进度、积分、结果和证据检查，再按 Enter 提交下一条，避免并发任务干扰。
+普通用例提交后，脚本通过 CDP 等待完成、失败、取消或超时终态，再提交下一条。出现超时会停止后续提交，避免任务重叠。带 `manualActions` 的用例会先通过 Open Computer Use 保存桌面状态，再显示人工动作门禁；完成应用内操作并按 Enter 后，脚本继续等待 CDP 终态。
+
+媒体附件只有在提供本地文件路径时才会调用 `ffprobe`；否则清单记录 `no-local-artifact`，保留给结果下载或人工复核阶段处理。
 
 也可以只串行运行某个主流程的 4 条用例：
 

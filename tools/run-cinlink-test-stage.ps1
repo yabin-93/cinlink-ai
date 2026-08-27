@@ -7,6 +7,8 @@ param(
     [string]$CaseId,
     [switch]$NoRestart,
     [switch]$DryRun,
+    [ValidateSet('Hybrid')]
+    [string]$ExecutionMode = 'Hybrid',
     [string]$RunnerPath = (Join-Path $PSScriptRoot 'run-cinlink-cases.ps1')
 )
 
@@ -31,6 +33,7 @@ $selector = [ordered]@{
     caseId = $CaseId
 }
 $runnerArguments = @{}
+$runnerArguments.ExecutionMode = $ExecutionMode
 if ($All) { $runnerArguments.All = $true }
 if (-not [string]::IsNullOrWhiteSpace($Workflow)) { $runnerArguments.Workflow = $Workflow }
 if (-not [string]::IsNullOrWhiteSpace($CaseId)) { $runnerArguments.CaseId = $CaseId }
@@ -60,6 +63,7 @@ if (-not $DryRun) {
 
 [ordered]@{
     stage = 'test'
+    executionMode = $ExecutionMode.ToLowerInvariant()
     selector = $selector
     dryRun = [bool]$DryRun
     runDirectory = $runDirectory
